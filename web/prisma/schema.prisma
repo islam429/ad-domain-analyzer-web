@@ -1,0 +1,85 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model Advertiser {
+  id         String     @id @default(cuid())
+  name       String
+  externalId String?    @unique
+  creatives  Creative[]
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+}
+
+model Creative {
+  id           String           @id @default(cuid())
+  advertiser   Advertiser       @relation(fields: [advertiserId], references: [id], onDelete: Cascade)
+  advertiserId String
+  sourceId     String?          @unique // Annahme: externe Creative-ID (z.B. Meta)
+  title        String?
+  landingLinks CreativeDomain[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+}
+
+model LandingDomain {
+  id        String                @id @default(cuid())
+  domain    String                @unique
+  creatives CreativeDomain[]
+  metrics   DomainMetricsMonthly[]
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+}
+
+model CreativeDomain {
+  id              String         @id @default(cuid())
+  creative        Creative       @relation(fields: [creativeId], references: [id], onDelete: Cascade)
+  creativeId      String
+  landingDomain   LandingDomain  @relation(fields: [landingDomainId], references: [id], onDelete: Cascade)
+  landingDomainId String
+  primary         Boolean        @default(false)
+  firstSeenAt     DateTime?
+  lastSeenAt      DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@unique([creativeId, landingDomainId])
+}
+
+model DomainMetricsMonthly {
+  id              String         @id @default(cuid())
+  landingDomain   LandingDomain  @relation(fields: [landingDomainId], references: [id], onDelete: Cascade)
+  landingDomainId String
+  month           DateTime       @map("month_start") // Annahme: erster Tag des Berichtsmonats
+  monthlyVisits   Int            @default(0)
+  conv15Estimate  Int?           @map("conv_15_estimate")
+  conv25Estimate  Int?           @map("conv_25_estimate")
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@unique([landingDomainId, month])
+}
+
+model Job {
+  id          String    @id @default(cuid())
+  type        String
+  status      JobStatus @default(PENDING)
+  payload     Json?
+  result      Json?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
