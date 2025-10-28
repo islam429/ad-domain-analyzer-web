@@ -40,6 +40,10 @@ async function applySubscriptionStatus(userId: string, status: Stripe.Subscripti
     plan?: string;
   } = { stripeSubscriptionStatus: normalizedStatus };
 
+  const db = prisma as unknown as {
+    user: { update: (args: any) => Promise<any> };
+  };
+
   if (normalizedStatus === "active" || normalizedStatus === "trialing") {
     data.plan = "pro";
   } else if (normalizedStatus === "canceled") {
@@ -47,7 +51,7 @@ async function applySubscriptionStatus(userId: string, status: Stripe.Subscripti
   }
 
   try {
-    await prisma.user.update({
+    await db.user.update({
       where: { id: userId },
       data,
     });

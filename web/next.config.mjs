@@ -4,6 +4,15 @@ const nextConfig = {
   experimental: {
     externalDir: true,
   },
+  async redirects() {
+    return [
+      {
+        source: '/',
+        destination: '/dashboard',
+        permanent: false,
+      },
+    ]
+  },
 };
 
 // Optional: enable Sentry by wrapping the config.
