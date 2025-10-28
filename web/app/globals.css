@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 250 250 255;
+  --fg: 15 23 42;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply font-sans bg-[rgb(var(--bg))] text-[rgb(var(--fg))];
+}

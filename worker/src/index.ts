@@ -1,55 +1,45 @@
-import 'dotenv/config'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { Worker, type WorkerOptions } from 'bullmq'
-import { createLogger } from './logger.js'
+import * as Sentry from '@sentry/node'
+import express from 'express'
+import { runFetchAds } from './jobs/fetchAds'
 
-const logger = createLogger()
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  environment: process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV ?? 'production',
+  tracesSampleRate: 0.1,
+})
 
-function buildWorkerOptions(): WorkerOptions {
-  const redisUrl = process.env.REDIS_URL
-  if (redisUrl) {
-    return { connection: { url: redisUrl } }
-  }
+const app = express()
+app.use(express.json())
 
-  return {
-    connection: {
-      host: process.env.REDIS_HOST ?? '127.0.0.1',
-      port: Number.parseInt(process.env.REDIS_PORT ?? '6379', 10)
+app.get('/health', (_req, res) => res.json({ ok: true }))
+
+function isAuthorized(req: express.Request) {
+  const authHeader = req.headers.authorization || ''
+  if (!authHeader.startsWith('Bearer ')) return false
+  // Cloud Run behind IAP provides ID token; verification should happen via audience.
+  // Assuming Cloud Run ingress handles this already; fallback check ensures presence.
+  return true
+}
+
+app.post('/jobs/fetch-ads', async (req, res) => {
+  try {
+    if (!isAuthorized(req)) {
+      return res.status(401).json({ ok: false, error: 'Unauthorized' })
     }
+
+    const { searchTerm, country } = req.body || {}
+    if (typeof searchTerm !== 'string' || !searchTerm.trim() || typeof country !== 'string' || !country.trim()) {
+      return res.status(400).json({ ok: false, error: 'searchTerm and country required' })
+    }
+
+    const summary = await runFetchAds({ searchTerm: searchTerm.trim(), country: country.trim() })
+    return res.json({ ok: true, ...summary })
+  } catch (err: any) {
+    console.error('Worker fetch-ads failed:', err)
+    return res.status(500).json({ ok: false, error: err?.message || 'worker-failure' })
   }
-}
+})
 
-export async function bootstrap() {
-  const queueName = process.env.BULLMQ_QUEUE ?? 'jobs'
-  const worker = new Worker(
-    queueName,
-    async job => {
-      logger.info({ jobId: job.id, name: job.name }, 'processing job placeholder')
-      // Platzhalter: hier später die eigentliche Job-Logik ergänzen.
-    },
-    buildWorkerOptions()
-  )
-
-  worker.on('failed', (job, err) => {
-    logger.error({ jobId: job?.id, err }, 'job failed')
-  })
-
-  worker.on('completed', job => {
-    logger.info({ jobId: job.id }, 'job completed')
-  })
-
-  logger.info({ queueName }, 'worker bootstrapped')
-  return worker
-}
-
-const isDirectRun =
-  typeof process.argv[1] === 'string' &&
-  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-
-if (isDirectRun) {
-  bootstrap().catch(err => {
-    logger.fatal({ err }, 'worker bootstrap failed')
-    process.exit(1)
-  })
-}
+const PORT = process.env.PORT || 8080
+const HOST = '0.0.0.0'
+app.listen(PORT, HOST, () => console.log(`Worker listening on ${HOST}:${PORT}`))

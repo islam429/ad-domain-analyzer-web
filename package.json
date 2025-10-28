@@ -12,6 +12,7 @@
     "typecheck": "pnpm -r typecheck",
     "format": "pnpm -r format",
     "test": "pnpm -r --if-present test",
+    "scan:api": "node tools/find-relative-api.js",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down"
   }

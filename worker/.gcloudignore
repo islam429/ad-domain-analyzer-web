@@ -1,0 +1,7 @@
+.git
+node_modules
+.vercel
+.env
+npm-debug.log
+
+!package-lock.json

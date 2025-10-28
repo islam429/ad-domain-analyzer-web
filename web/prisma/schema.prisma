@@ -1,85 +1,319 @@
-generator client {
-  provider = "prisma-client-js"
-}
-
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-enum JobStatus {
-  PENDING
-  RUNNING
-  COMPLETED
-  FAILED
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+
+  // App-spezifisch
+  plan                     String? // "free" | "pro" | "enterprise"
+  stripeCustomerId         String?
+  stripeSubscriptionId     String?
+  stripeSubscriptionStatus String?
+
+  accounts Account[]
+  sessions Session[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model UserAccount {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("user_account")
+}
+
+model Organization {
+  id                       String       @id @default(cuid())
+  name                     String
+  ownerUserId              String       @map("owner_user_id")
+  plan                     String       @default("free")
+  stripeId                 String?      @map("stripe_id")
+  stripeSubscriptionItemId String?      @map("stripe_subscription_item_id")
+  createdAt                DateTime     @default(now()) @map("created_at")
+  memberships              Membership[]
+  usage                    Usage?
+
+  @@map("organization")
+}
+
+model Membership {
+  id           String       @id @default(cuid())
+  orgId        String       @map("org_id")
+  userId       String       @map("user_id")
+  role         String       @default("admin")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, userId], map: "membership_org_id_user_id_key")
+  @@index([userId], map: "membership_user_id_idx")
+  @@map("membership")
+}
+
+model Usage {
+  orgId        String       @id @map("org_id")
+  credits      Int          @default(1000)
+  month        String
+  updatedAt    DateTime     @map("updated_at")
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  @@map("usage")
+}
+
+model TrafficCache {
+  id                 Int      @id @default(autoincrement())
+  domain             String
+  country            String?
+  language           String?
+  organicEtv         Float?   @map("organic_etv")
+  paidEtv            Float?   @map("paid_etv")
+  featuredSnippetEtv Float?   @map("featured_snippet_etv")
+  localPackEtv       Float?   @map("local_pack_etv")
+  visitsSearchTotal  Float?   @map("visits_search_total")
+  updatedAt          DateTime
+
+  @@unique([domain, country, language], map: "traffic_cache_domain_country_language_key")
+  @@map("traffic_cache")
+}
+
+model AdRow {
+  id                 Int      @id @default(autoincrement())
+  jobId              BigInt   @map("job_id")
+  orgId              String   @map("org_id")
+  domain             String
+  organicEtv         Float?   @map("organic_etv")
+  paidEtv            Float?   @map("paid_etv")
+  featuredSnippetEtv Float?   @map("featured_snippet_etv")
+  localPackEtv       Float?   @map("local_pack_etv")
+  visitsSearchTotal  Float?   @map("visits_search_total")
+  conversions15      Float?   @map("conversions_15")
+  conversions25      Float?   @map("conversions_25")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  @@unique([jobId, domain, orgId], map: "ad_row_job_id_domain_org_id_key")
+  @@map("ad_row")
+}
+
+model Job {
+  id           Int               @id @default(autoincrement())
+  searchTerm   String            @map("search_term")
+  country      String
+  status       String            @default("pending")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  createdById  String?           @map("created_by_id")
+  rowsInserted Int?              @map("rows_inserted")
+  runs         JobRun[]
+  domainLinks  JobResultDomain[]
+
+  @@index([status])
+  @@map("job")
+}
+
+model JobRun {
+  id         String     @id @default(cuid())
+  jobId      Int        @map("job_id")
+  startedAt  DateTime   @default(now()) @map("started_at")
+  finishedAt DateTime?  @map("finished_at")
+  status     String     @default("running")
+  error      String?
+  stats      Json?
+  job        Job        @relation(fields: [jobId], references: [id])
+  creatives  Creative[]
+
+  @@index([jobId])
+  @@map("job_run")
 }
 
 model Advertiser {
   id         String     @id @default(cuid())
   name       String
-  externalId String?    @unique
-  creatives  Creative[]
+  pageId     String     @unique
+  platformId String?    @unique @map("externalId")
+  country    String?
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
-}
+  creatives  Creative[]
+  ads        Ad[]
 
-model Creative {
-  id           String           @id @default(cuid())
-  advertiser   Advertiser       @relation(fields: [advertiserId], references: [id], onDelete: Cascade)
-  advertiserId String
-  sourceId     String?          @unique // Annahme: externe Creative-ID (z.B. Meta)
-  title        String?
-  landingLinks CreativeDomain[]
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-}
-
-model LandingDomain {
-  id        String                @id @default(cuid())
-  domain    String                @unique
-  creatives CreativeDomain[]
-  metrics   DomainMetricsMonthly[]
-  createdAt DateTime              @default(now())
-  updatedAt DateTime              @updatedAt
+  @@map("advertiser")
 }
 
 model CreativeDomain {
-  id              String         @id @default(cuid())
-  creative        Creative       @relation(fields: [creativeId], references: [id], onDelete: Cascade)
-  creativeId      String
-  landingDomain   LandingDomain  @relation(fields: [landingDomainId], references: [id], onDelete: Cascade)
-  landingDomainId String
-  primary         Boolean        @default(false)
-  firstSeenAt     DateTime?
-  lastSeenAt      DateTime?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  id        String     @id @default(cuid())
+  host      String     @unique
+  createdAt DateTime   @default(now())
+  creatives Creative[]
 
-  @@unique([creativeId, landingDomainId])
+  @@map("creative_domain")
+}
+
+model LandingDomain {
+  id            String                  @id @default(cuid())
+  host          String                  @unique @map("domain")
+  rootDomain    String?                 @map("root_domain")
+  createdAt     DateTime                @default(now()) @map("first_seen")
+  updatedAt     DateTime                @default(now()) @map("last_seen")
+  creativeLinks CreativeLandingDomain[]
+  jobLinks      JobResultDomain[]
+  metrics       DomainMetricsMonthly[]
+
+  @@map("landing_domain")
+}
+
+model Creative {
+  id               String                  @id @default(cuid())
+  advertiserId     String
+  advertiser       Advertiser              @relation(fields: [advertiserId], references: [id])
+  creativeDomainId String?
+  creativeDomain   CreativeDomain?         @relation(fields: [creativeDomainId], references: [id])
+  jobRunId         String?
+  jobRun           JobRun?                 @relation(fields: [jobRunId], references: [id])
+  externalId       String?                 @unique
+  headline         String?
+  text             String?
+  imageUrl         String?                 @map("image_url")
+  videoUrl         String?                 @map("video_url")
+  country          String?
+  startDate        DateTime?               @map("start_date")
+  endDate          DateTime?               @map("end_date")
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  landingLinks     CreativeLandingDomain[]
+
+  @@index([advertiserId])
+  @@index([jobRunId])
+  @@map("creative")
+}
+
+model CreativeLandingDomain {
+  creativeId      String
+  landingDomainId String
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  creative      Creative      @relation(fields: [creativeId], references: [id])
+  landingDomain LandingDomain @relation(fields: [landingDomainId], references: [id])
+
+  @@id([creativeId, landingDomainId])
+  @@map("creative_landing_domain")
 }
 
 model DomainMetricsMonthly {
-  id              String         @id @default(cuid())
-  landingDomain   LandingDomain  @relation(fields: [landingDomainId], references: [id], onDelete: Cascade)
-  landingDomainId String
-  month           DateTime       @map("month_start") // Annahme: erster Tag des Berichtsmonats
-  monthlyVisits   Int            @default(0)
-  conv15Estimate  Int?           @map("conv_15_estimate")
-  conv25Estimate  Int?           @map("conv_25_estimate")
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  id                 Int           @id @default(autoincrement())
+  landingDomainId    String        @map("domain_id")
+  year               Int
+  month              Int
+  organicEtv         Float?        @map("organic_etv")
+  paidEtv            Float?        @map("paid_etv")
+  featuredSnippetEtv Float?        @map("featured_snippet_etv")
+  localPackEtv       Float?        @map("local_pack_etv")
+  visitsSearchTotal  Float?        @map("visits_search_total")
+  landingDomain      LandingDomain @relation(fields: [landingDomainId], references: [id])
 
-  @@unique([landingDomainId, month])
+  @@unique([landingDomainId, year, month], map: "domain_metrics_monthly_domain_id_year_month_key")
+  @@index([landingDomainId], map: "domain_metrics_monthly_domain_id_idx")
+  @@map("domain_metrics_monthly")
 }
 
-model Job {
-  id          String    @id @default(cuid())
-  type        String
-  status      JobStatus @default(PENDING)
-  payload     Json?
-  result      Json?
-  startedAt   DateTime?
-  completedAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+model JobResultDomain {
+  id              Int           @id @default(autoincrement())
+  jobId           Int           @map("job_id")
+  landingDomainId String        @map("domain_id")
+  job             Job           @relation(fields: [jobId], references: [id])
+  landingDomain   LandingDomain @relation(fields: [landingDomainId], references: [id])
+
+  @@unique([jobId, landingDomainId], map: "job_result_domain_job_id_domain_id_key")
+  @@index([jobId], map: "job_result_domain_job_id_idx")
+  @@index([landingDomainId], map: "job_result_domain_domain_id_idx")
+  @@map("job_result_domain")
 }
+
+model Ad {
+  id           String     @id @default(cuid())
+  metaAdId     String     @unique
+  advertiserId String
+  advertiser   Advertiser @relation(fields: [advertiserId], references: [id])
+  startedAt    DateTime?
+  domains      AdDomain[]
+}
+
+model Domain {
+  id        String            @id @default(cuid())
+  host      String            @unique
+  snapshots TrafficSnapshot[]
+  adLinks   AdDomain[]
+}
+
+model AdDomain {
+  adId      String
+  domainId  String
+  firstSeen DateTime @default(now())
+
+  ad     Ad     @relation(fields: [adId], references: [id])
+  domain Domain @relation(fields: [domainId], references: [id])
+
+  @@id([adId, domainId])
+}
+
+model TrafficSnapshot {
+  id        String   @id @default(cuid())
+  domainId  String
+  month     String
+  visits    Int
+  source    String
+  createdAt DateTime @default(now())
+  domain    Domain   @relation(fields: [domainId], references: [id])
+
+  @@unique([domainId, month])
+}
+
+// run: npx prisma migrate dev -n init_ads_domains
