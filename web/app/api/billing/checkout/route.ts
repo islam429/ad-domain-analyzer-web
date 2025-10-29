@@ -2,22 +2,19 @@ export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
-import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { PRICE_BY_PLAN, type Plan } from "@/lib/stripe";
-
-type Body = { plan: Plan }
 
 export async function POST(req: Request) {
   try {
     const session = await auth();
-    const email = session?.user?.email || undefined;
-    const userId = session?.user?.id || undefined;
-    const hasSessionUser = Boolean(email || userId);
+    const hasUser = Boolean(session?.user && (((session.user as any).id) || ((session.user as any).email)));
+
     const okByToken =
       process.env.ADMIN_API_TOKEN &&
       req.headers.get("authorization") === `Bearer ${process.env.ADMIN_API_TOKEN}`;
-    if (!hasSessionUser && !okByToken) {
+
+    if (!hasUser && !okByToken) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -27,42 +24,23 @@ export async function POST(req: Request) {
     }
     const stripe = new Stripe(secret);
 
-    const { plan } = (await req.json().catch(() => ({}))) as Body;
-    if (!plan) return NextResponse.json({ error: "Missing plan" }, { status: 400 });
-
-    const priceId = PRICE_BY_PLAN[plan];
+    const body = await req.json().catch(() => ({})) as { priceId?: string; plan?: Plan };
+    const priceId = body.priceId ?? (body.plan ? PRICE_BY_PLAN[body.plan] : undefined);
     if (!priceId) {
-      return NextResponse.json({ error: `Price ID missing for plan "${plan}"` }, { status: 500 });
+      return NextResponse.json({ error: "Missing priceId" }, { status: 400 });
     }
 
-    const m = await prisma.membership.findFirst({ where: { userId: email }, select: { orgId: true } });
-    if (!m) return NextResponse.json({ error: "No organization found" }, { status: 400 });
-    const orgId = m.orgId;
-
-    const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { stripeId: true, name: true } });
-    let customerId = org?.stripeId ?? undefined;
-    if (!customerId) {
-      const customer = await stripe.customers.create({ name: org?.name ?? "Workspace", email, metadata: { orgId } });
-      customerId = customer.id;
-      await prisma.organization.update({ where: { id: orgId }, data: { stripeId: customerId } });
-    }
-
-    const price = await stripe.prices.retrieve(priceId);
-    if (!price.active) return NextResponse.json({ error: "Stripe price is inactive" }, { status: 400 });
-
-    const line_items =
-      price.recurring?.usage_type === "metered" ? [{ price: priceId }] : [{ price: priceId, quantity: 1 }];
+    const baseUrl = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_URL ?? "https://www.pryos.io";
 
     const checkout = await stripe.checkout.sessions.create({
       mode: "subscription",
-      customer: customerId,
-      line_items,
-      success_url: `${process.env.NEXT_PUBLIC_URL}/billing/success`,
-      cancel_url: `${process.env.NEXT_PUBLIC_URL}/billing/cancel`,
-      metadata: { orgId, plan },
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: `${baseUrl}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseUrl}/billing/cancel`,
+      metadata: body.plan ? { plan: body.plan } : undefined,
     });
 
-    return NextResponse.json({ url: checkout.url });
+    return NextResponse.json({ url: checkout.url }, { status: 200 });
   } catch (e: any) {
     console.error("Checkout error:", e?.message || e);
     return NextResponse.json({ error: e?.message || "Unknown checkout error" }, { status: 500 });
