@@ -12,7 +12,7 @@ export async function POST(req: Request) {
     return new Response("Missing Stripe configuration or signature", { status: 400 });
   }
 
-  const stripe = new Stripe(stripeSecret, { apiVersion: "2024-04-10" });
+  const stripe = new Stripe(stripeSecret);
   const rawBody = await req.text();
 
   let event: Stripe.Event;
