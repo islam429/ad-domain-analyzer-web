@@ -1,9 +1,8 @@
 export const runtime = "nodejs";
 
-import type Stripe from "stripe";
+import Stripe from "stripe";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { stripe } from "@/lib/stripe-client";
 
 function getUserIdFromSession(session: Stripe.Checkout.Session): string | undefined {
   const fromMetadata = typeof session.metadata?.userId === "string" ? session.metadata.userId : undefined;
@@ -72,6 +71,13 @@ export async function POST(req: Request) {
   if (!webhookSecret) {
     return new Response("Missing STRIPE_WEBHOOK_SECRET", { status: 500 });
   }
+
+  const secretKey = process.env.STRIPE_SECRET_KEY;
+  if (!secretKey) {
+    return new Response("Missing STRIPE_SECRET_KEY", { status: 500 });
+  }
+
+  const stripe = new Stripe(secretKey, { apiVersion: "2024-04-10" });
 
   let event: Stripe.Event;
   try {
