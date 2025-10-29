@@ -12,7 +12,12 @@ export async function POST(req: Request) {
   try {
     const session = await auth();
     const email = session?.user?.email;
-    if (!email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const okByToken =
+      process.env.ADMIN_API_TOKEN &&
+      req.headers.get("authorization") === `Bearer ${process.env.ADMIN_API_TOKEN}`;
+    if (!email && !okByToken) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
     const secret = process.env.STRIPE_SECRET_KEY;
     if (!secret) {
