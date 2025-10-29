@@ -11,11 +11,13 @@ type Body = { plan: Plan }
 export async function POST(req: Request) {
   try {
     const session = await auth();
-    const email = session?.user?.email;
+    const email = session?.user?.email || undefined;
+    const userId = session?.user?.id || undefined;
+    const hasSessionUser = Boolean(email || userId);
     const okByToken =
       process.env.ADMIN_API_TOKEN &&
       req.headers.get("authorization") === `Bearer ${process.env.ADMIN_API_TOKEN}`;
-    if (!email && !okByToken) {
+    if (!hasSessionUser && !okByToken) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
