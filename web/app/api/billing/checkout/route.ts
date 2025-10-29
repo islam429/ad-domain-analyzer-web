@@ -18,7 +18,7 @@ export async function POST(req: Request) {
     if (!secret) {
       return NextResponse.json({ error: "Missing STRIPE_SECRET_KEY" }, { status: 500 });
     }
-    const stripe = new Stripe(secret, { apiVersion: "2024-04-10" });
+    const stripe = new Stripe(secret);
 
     const { plan } = (await req.json().catch(() => ({}))) as Body;
     if (!plan) return NextResponse.json({ error: "Missing plan" }, { status: 400 });

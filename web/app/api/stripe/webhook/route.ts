@@ -77,7 +77,7 @@ export async function POST(req: Request) {
     return new Response("Missing STRIPE_SECRET_KEY", { status: 500 });
   }
 
-  const stripe = new Stripe(secretKey, { apiVersion: "2024-04-10" });
+  const stripe = new Stripe(secretKey);
 
   let event: Stripe.Event;
   try {
