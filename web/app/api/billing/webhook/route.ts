@@ -1,67 +1,41 @@
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-import type Stripe from 'stripe'
-import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
-import { planFromPriceId } from '@/lib/stripe'
-import { stripe } from '@/lib/stripe-client'
-const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET!
+import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
-  const sig = req.headers.get('stripe-signature')!
-  const raw = await req.text()
-
-  let event: Stripe.Event
   try {
-    event = stripe.webhooks.constructEvent(raw, sig, endpointSecret)
-  } catch (e: any) {
-    return new NextResponse(`Webhook Error: ${e.message}`, { status: 400 })
+    const rawBody = await req.text();
+    const signature = req.headers.get("stripe-signature");
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    const secretKey = process.env.STRIPE_SECRET_KEY;
+
+    if (!signature || !webhookSecret || !secretKey) {
+      return new NextResponse("Missing stripe envs or signature", { status: 400 });
+    }
+
+    const { default: Stripe } = await import("stripe");
+    const stripe = new Stripe(secretKey);
+
+    let event;
+    try {
+      event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
+    } catch (err) {
+      return new NextResponse(`Invalid signature: ${String((err as any)?.message ?? err)}`, { status: 400 });
+    }
+
+    switch (event.type) {
+      case "checkout.session.completed":
+      case "customer.subscription.created":
+      case "customer.subscription.updated":
+      case "customer.subscription.deleted":
+        break;
+      default:
+        break;
+    }
+
+    return NextResponse.json({ received: true });
+  } catch (err) {
+    return new NextResponse(`Webhook error: ${String((err as any)?.message ?? err)}`, { status: 500 });
   }
-
-  async function updatePlanBySub(sub: Stripe.Subscription) {
-    const item = sub.items.data[0]
-    const priceId = item?.price?.id
-    const plan = planFromPriceId(priceId || undefined)
-    const customerId = sub.customer as string | undefined
-
-    if (!customerId) return
-
-    if (plan) {
-      await prisma.organization.updateMany({ where: { stripeId: customerId }, data: { plan } })
-    } else {
-      await prisma.organization.updateMany({ where: { stripeId: customerId }, data: { plan: 'free' } })
-    }
-  }
-
-  switch (event.type) {
-    case 'checkout.session.completed': {
-      const s = event.data.object as Stripe.Checkout.Session
-      if (s.subscription) {
-        const sub = await stripe.subscriptions.retrieve(s.subscription as string)
-        await updatePlanBySub(sub)
-      }
-      const orgId = (s.metadata?.orgId as string) || null
-      if (orgId && s.customer) {
-        await prisma.organization.update({
-          where: { id: orgId },
-          data: { stripeId: s.customer as string },
-        })
-      }
-      break
-    }
-    case 'customer.subscription.updated':
-    case 'customer.subscription.created': {
-      const sub = event.data.object as Stripe.Subscription
-      await updatePlanBySub(sub)
-      break
-    }
-    case 'customer.subscription.deleted': {
-      const sub = event.data.object as Stripe.Subscription
-      const customerId = sub.customer as string
-      await prisma.organization.updateMany({ where: { stripeId: customerId }, data: { plan: 'free' } })
-      break
-    }
-  }
-
-  return NextResponse.json({ received: true })
 }
