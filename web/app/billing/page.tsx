@@ -7,21 +7,38 @@ export default function BillingPage() {
   const [loading, setLoading] = useState<Plan | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
+  async function callApi(url: string, body?: Record<string, unknown>) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: body ? JSON.stringify(body) : undefined,
+    })
+
+    const contentType = res.headers.get('content-type') || ''
+    let data: any = {}
+    if (contentType.includes('application/json')) {
+      try {
+        data = await res.json()
+      } catch (err) {
+        throw new Error(`Antwort war kein gültiges JSON (${err})`)
+      }
+    }
+
+    if (!res.ok) {
+      throw new Error(data?.error || `${res.status} ${res.statusText}`)
+    }
+
+    if (!data?.url) {
+      throw new Error('Serverantwort enthält keine Weiterleitungs-URL')
+    }
+
+    window.location.assign(data.url)
+  }
+
   async function openPortal() {
     try {
-      const r = await fetch('/api/billing/portal', { method: 'POST' })
-      const text = await r.text()
-      if (!r.ok) {
-        throw new Error(text || `HTTP ${r.status}`)
-      }
-      let j: any = {}
-      try {
-        j = text ? JSON.parse(text) : {}
-      } catch {
-        throw new Error(`Antwort war kein JSON:\n${text.slice(0, 200)}`)
-      }
-      if (j?.url) window.location.href = j.url
-      else setErr(j?.error || 'Fehler beim Portal-Aufruf')
+      await callApi('/api/billing/portal')
     } catch (e: any) {
       setErr(e?.message || 'Fehler beim Portal-Aufruf')
     }
@@ -31,14 +48,7 @@ export default function BillingPage() {
     setErr(null)
     setLoading(plan)
     try {
-      const r = await fetch('/api/billing/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan }),
-      })
-      const j = await r.json()
-      if (!r.ok || !j?.url) throw new Error(j?.error || `HTTP ${r.status}`)
-      window.location.href = j.url
+      await callApi('/api/billing/checkout', { plan })
     } catch (e: any) {
       setErr(e?.message || 'Fehler beim Checkout')
     } finally {
