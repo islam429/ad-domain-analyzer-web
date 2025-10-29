@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { BadgePlan } from '../ui/BadgePlan'
 import { Button } from '../ui/Button'
+import { LogoutButton } from '@/components/LogoutButton'
 import type { Plan } from '@/lib/plan'
 
 export default function AppShell({
@@ -45,11 +46,7 @@ export default function AppShell({
             <Link href="/billing">
               <Button variant="secondary">Abo verwalten</Button>
             </Link>
-            <form action="/api/auth/signout?callbackUrl=/login" method="post">
-              <Button variant="ghost" type="submit">
-                Logout
-              </Button>
-            </form>
+            <LogoutButton variant="ghost">Logout</LogoutButton>
           </div>
         </header>
         <main>{children}</main>
