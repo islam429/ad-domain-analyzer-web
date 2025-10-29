@@ -46,7 +46,10 @@ export default function AppShell({
               <Button variant="secondary">Abo verwalten</Button>
             </Link>
             <form action="/api/auth/signout" method="post">
-              <Button variant="ghost">Logout</Button>
+              <input type="hidden" name="callbackUrl" value="/login" />
+              <Button variant="ghost" type="submit">
+                Logout
+              </Button>
             </form>
           </div>
         </header>
