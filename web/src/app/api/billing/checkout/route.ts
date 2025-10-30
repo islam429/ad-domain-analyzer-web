@@ -21,8 +21,18 @@ function resolveBaseUrl(req: Request) {
   return `${protocol}//${host}`;
 }
 
-async function createCheckoutSession(priceId: string, req: Request, stripe: Stripe) {
+function resolvePrice(priceId?: string | null, plan?: string | null) {
+  const planKey = plan?.toLowerCase() ?? undefined;
+  return priceId || (planKey ? PRICE_MAP[planKey] : undefined);
+}
+
+async function createCheckoutSession(priceId: string, req: Request) {
+  const secret = process.env.STRIPE_SECRET_KEY;
+  if (!secret) throw new Error("Missing STRIPE_SECRET_KEY");
+
+  const stripe = new Stripe(secret);
   const base = resolveBaseUrl(req);
+
   return stripe.checkout.sessions.create({
     mode: "subscription",
     line_items: [{ price: priceId, quantity: 1 }],
@@ -39,23 +49,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const secret = process.env.STRIPE_SECRET_KEY;
-    if (!secret) {
-      return NextResponse.json({ error: "Missing STRIPE_SECRET_KEY" }, { status: 500 });
-    }
-
     const { priceId, plan } = await req
       .json()
       .catch(() => ({} as { priceId?: string; plan?: string }));
 
-    const planKey = plan?.toLowerCase() ?? undefined;
-    const resolvedPrice = priceId || (planKey ? PRICE_MAP[planKey] : undefined);
+    const resolvedPrice = resolvePrice(priceId, plan ?? undefined);
     if (!resolvedPrice) {
       return NextResponse.json({ error: "Missing priceId" }, { status: 400 });
     }
 
-    const stripe = new Stripe(secret);
-    const checkout = await createCheckoutSession(resolvedPrice, req, stripe);
+    const checkout = await createCheckoutSession(resolvedPrice, req);
 
     return NextResponse.json({ url: checkout.url }, { status: 200 });
   } catch (err: any) {
@@ -66,22 +69,16 @@ export async function POST(req: Request) {
 export async function GET(req: Request) {
   try {
     const params = new URL(req.url).searchParams;
-    const priceOrPlan =
-      params.get("priceId") ?? params.get("price") ?? params.get("plan") ?? undefined;
-    const planKey = priceOrPlan?.toLowerCase();
-    const resolvedPrice = planKey && PRICE_MAP[planKey] ? PRICE_MAP[planKey] : priceOrPlan;
+    const priceParam = params.get("priceId") ?? params.get("price") ?? undefined;
+    const planParam = params.get("plan") ?? undefined;
+    const resolvedPrice = resolvePrice(priceParam, planParam);
     if (!resolvedPrice) {
       return NextResponse.json({ error: "Missing priceId" }, { status: 400 });
     }
 
-    const secret = process.env.STRIPE_SECRET_KEY;
-    if (!secret) {
-      return NextResponse.json({ error: "Missing STRIPE_SECRET_KEY" }, { status: 500 });
-    }
-    const stripe = new Stripe(secret);
-    const checkout = await createCheckoutSession(resolvedPrice, req, stripe);
+    const checkout = await createCheckoutSession(resolvedPrice, req);
 
-    return NextResponse.json({ url: checkout.url }, { status: 200 });
+    return NextResponse.redirect(checkout.url!, 303);
   } catch (err: any) {
     return NextResponse.json({ error: String(err?.message ?? err) }, { status: 500 });
   }
