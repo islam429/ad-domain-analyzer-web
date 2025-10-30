@@ -4,18 +4,20 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { auth } from "@/lib/auth";
+import { ENV } from "@/env";
 
 const PRICE_MAP: Record<string, string | undefined> = {
-  starter: process.env.STRIPE_PRICE_STARTER,
-  pro: process.env.STRIPE_PRICE_PRO,
-  business: process.env.STRIPE_PRICE_BUISNESS ?? process.env.STRIPE_PRICE_BUSINESS,
+  starter: ENV.STRIPE_PRICE_STARTER,
+  pro: ENV.STRIPE_PRICE_PRO,
+  business: ENV.STRIPE_PRICE_BUSINESS,
 };
 
 type StripeUser = { id?: string; email?: string } | undefined;
 
 function resolveBaseUrl(req: Request) {
-  if (process.env.NEXTAUTH_URL && process.env.NEXTAUTH_URL.trim().length > 0) {
-    return process.env.NEXTAUTH_URL;
+  const preferred = ENV.NEXTAUTH_URL ?? ENV.NEXT_PUBLIC_URL;
+  if (preferred && preferred.trim().length > 0) {
+    return preferred;
   }
   const { protocol, host } = new URL(req.url);
   return `${protocol}//${host}`;
@@ -27,10 +29,7 @@ function resolvePrice(priceId?: string | null, plan?: string | null) {
 }
 
 async function createCheckoutSession(priceId: string, req: Request) {
-  const secret = process.env.STRIPE_SECRET_KEY;
-  if (!secret) throw new Error("Missing STRIPE_SECRET_KEY");
-
-  const stripe = new Stripe(secret);
+  const stripe = new Stripe(ENV.STRIPE_SECRET_KEY);
   const base = resolveBaseUrl(req);
 
   const price = await stripe.prices.retrieve(priceId);

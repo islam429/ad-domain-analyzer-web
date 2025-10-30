@@ -11,7 +11,7 @@
     "start": "cross-env-shell \"next start -p ${WEB_PORT:-3001}\"",
     "lint": "next lint",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "postinstall": "prisma generate --schema=./prisma/schema.prisma",
+    "postinstall": "node ./scripts/ensure-app-root.cjs && prisma generate --schema=./prisma/schema.prisma",
     "prebuild": "prisma generate --schema=./prisma/schema.prisma",
     "format": "prettier --check .",
     "test": "playwright test",
