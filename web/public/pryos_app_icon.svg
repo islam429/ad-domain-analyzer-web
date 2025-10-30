@@ -1,0 +1,10 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="pryosGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4228ff" />
+      <stop offset="100%" stop-color="#0a3fbf" />
+    </linearGradient>
+  </defs>
+  <rect x="32" y="32" width="448" height="448" rx="120" fill="url(#pryosGradient)" />
+  <path d="M216 128c-18 0-32 14-32 32v192c0 18 14 32 32 32h72c78 0 128-46 128-128 0-74-52-128-128-128h-32l-8-24c-4-12-16-20-28-20h-4zM288 192c38 0 64 26 64 64s-26 64-64 64h-48v-128h48z" fill="#ffffff" />
+</svg>

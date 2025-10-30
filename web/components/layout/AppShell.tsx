@@ -15,7 +15,7 @@ export default function AppShell({
       <aside className="bg-white border-r border-slate-200 p-4">
         <div className="flex items-center justify-between mb-6">
           <Link href="/" className="flex items-center gap-2">
-            <div className="size-8 rounded-xl bg-brand-600 text-white grid place-content-center font-bold">A</div>
+            <img src="/pryos_app_icon.svg" alt="Pryos" className="size-8 rounded-xl" />
             <span className="font-semibold">Ad Domain Analyzer</span>
           </Link>
         </div>
