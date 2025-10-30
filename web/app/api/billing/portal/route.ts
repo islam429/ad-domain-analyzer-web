@@ -27,7 +27,10 @@ async function resolveCustomerId(userId?: string, userEmail?: string): Promise<s
     select: { stripeCustomerId: true, email: true },
   });
 
-  return user?.stripeCustomerId ?? undefined;
+  if (!user || user.stripeCustomerId == null) {
+    return undefined;
+  }
+  return user.stripeCustomerId;
 }
 
 async function createPortalSession(customerId: string, req: Request, returnUrl?: string) {
