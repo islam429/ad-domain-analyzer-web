@@ -5,6 +5,12 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { auth } from "@/lib/auth";
 
+const PRICE_MAP: Record<string, string | undefined> = {
+  starter: process.env.STRIPE_PRICE_STARTER,
+  pro: process.env.STRIPE_PRICE_PRO,
+  business: process.env.STRIPE_PRICE_BUISNESS ?? process.env.STRIPE_PRICE_BUSINESS,
+};
+
 type StripeUser = { id?: string; email?: string } | undefined;
 
 function resolveBaseUrl(req: Request) {
@@ -38,13 +44,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing STRIPE_SECRET_KEY" }, { status: 500 });
     }
 
-    const { priceId } = await req.json().catch(() => ({} as { priceId?: string }));
-    if (!priceId) {
+    const { priceId, plan } = await req
+      .json()
+      .catch(() => ({} as { priceId?: string; plan?: string }));
+
+    const planKey = plan?.toLowerCase() ?? undefined;
+    const resolvedPrice = priceId || (planKey ? PRICE_MAP[planKey] : undefined);
+    if (!resolvedPrice) {
       return NextResponse.json({ error: "Missing priceId" }, { status: 400 });
     }
 
     const stripe = new Stripe(secret);
-    const checkout = await createCheckoutSession(priceId, req, stripe);
+    const checkout = await createCheckoutSession(resolvedPrice, req, stripe);
 
     return NextResponse.json({ url: checkout.url }, { status: 200 });
   } catch (err: any) {
@@ -55,8 +66,11 @@ export async function POST(req: Request) {
 export async function GET(req: Request) {
   try {
     const params = new URL(req.url).searchParams;
-    const priceId = params.get("priceId") ?? params.get("price") ?? params.get("plan");
-    if (!priceId) {
+    const priceOrPlan =
+      params.get("priceId") ?? params.get("price") ?? params.get("plan") ?? undefined;
+    const planKey = priceOrPlan?.toLowerCase();
+    const resolvedPrice = planKey && PRICE_MAP[planKey] ? PRICE_MAP[planKey] : priceOrPlan;
+    if (!resolvedPrice) {
       return NextResponse.json({ error: "Missing priceId" }, { status: 400 });
     }
 
@@ -65,7 +79,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Missing STRIPE_SECRET_KEY" }, { status: 500 });
     }
     const stripe = new Stripe(secret);
-    const checkout = await createCheckoutSession(priceId, req, stripe);
+    const checkout = await createCheckoutSession(resolvedPrice, req, stripe);
 
     return NextResponse.json({ url: checkout.url }, { status: 200 });
   } catch (err: any) {
