@@ -16,15 +16,42 @@ model User {
 
   // App-spezifisch
   plan                     String? // "free" | "pro" | "enterprise"
-  stripeCustomerId         String?
+  stripeCustomerId         String?  @unique
   stripeSubscriptionId     String?
   stripeSubscriptionStatus String?
 
   accounts Account[]
   sessions Session[]
+  subscriptions Subscription[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+enum SubscriptionStatus {
+  incomplete
+  incomplete_expired
+  trialing
+  active
+  past_due
+  canceled
+  unpaid
+}
+
+model Subscription {
+  id                String              @id
+  userId            String
+  status            SubscriptionStatus
+  priceId           String
+  plan              String
+  currentPeriodEnd  DateTime?
+  cancelAtPeriodEnd Boolean            @default(false)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
 }
 
 model Account {
