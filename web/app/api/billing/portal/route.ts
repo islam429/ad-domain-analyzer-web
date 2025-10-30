@@ -1,60 +1,87 @@
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
-import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { ENV } from "@/env";
 
-type Body = {
-  customerId?: string;
-  returnUrl?: string;
-};
+function resolveBaseUrl(req: Request) {
+  const preferred = ENV.NEXTAUTH_URL ?? ENV.NEXT_PUBLIC_URL;
+  if (preferred && preferred.trim().length > 0) return preferred;
+  const { protocol, host } = new URL(req.url);
+  return `${protocol}//${host}`;
+}
+
+async function resolveCustomerId(userId?: string, userEmail?: string): Promise<string | undefined> {
+  if (!userId && !userEmail) return undefined;
+
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [
+        userId ? { id: userId } : undefined,
+        userEmail ? { email: userEmail.toLowerCase().trim() } : undefined,
+      ].filter(Boolean) as any,
+    },
+    select: { stripeCustomerId: true, email: true },
+  });
+
+  return user?.stripeCustomerId;
+}
+
+async function createPortalSession(customerId: string, req: Request, returnUrl?: string) {
+  const stripe = new Stripe(ENV.STRIPE_SECRET_KEY);
+  const base = resolveBaseUrl(req);
+
+  return stripe.billingPortal.sessions.create({
+    customer: customerId,
+    return_url: returnUrl ?? `${base}/billing`,
+  });
+}
 
 export async function POST(req: Request) {
   try {
-    const secret = process.env.STRIPE_SECRET_KEY;
-    if (!secret) {
-      return NextResponse.json({ error: "Missing STRIPE_SECRET_KEY" }, { status: 500 });
+    const session = await auth();
+    const user = session?.user as { id?: string; email?: string } | undefined;
+    if (!user?.id && !user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const stripe = new Stripe(secret);
+    const { returnUrl } = await req.json().catch(() => ({} as { returnUrl?: string }));
 
-    const { customerId, returnUrl } = (await req.json().catch(() => ({}))) as Body;
-
-    let resolvedCustomerId = customerId;
-    if (!resolvedCustomerId) {
-      const session = await auth();
-      const email = session?.user?.email;
-      if (!email) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
-
-      const membership = await prisma.membership.findFirst({
-        where: { userId: email },
-        select: { orgId: true },
-      });
-      const org = membership
-        ? await prisma.organization.findUnique({ where: { id: membership.orgId }, select: { stripeId: true } })
-        : null;
-      if (!org?.stripeId) {
-        return NextResponse.json({ error: "No Stripe customer" }, { status: 400 });
-      }
-      resolvedCustomerId = org.stripeId;
+    const customerId = await resolveCustomerId(user?.id, user?.email);
+    if (!customerId) {
+      return NextResponse.json({ error: "No Stripe customer" }, { status: 400 });
     }
 
-    if (!resolvedCustomerId) {
-      return NextResponse.json({ error: "Missing customerId" }, { status: 400 });
-    }
+    const portal = await createPortalSession(customerId, req, returnUrl);
 
-    const fallbackReturn = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_URL ?? "https://www.pryos.io";
-
-    const session = await stripe.billingPortal.sessions.create({
-      customer: resolvedCustomerId,
-      return_url: returnUrl ?? `${fallbackReturn}/billing`,
-    });
-
-    return NextResponse.json({ url: session.url }, { status: 200 });
+    return NextResponse.json({ url: portal.url }, { status: 200 });
   } catch (err: any) {
+    console.error("[billing-portal][POST]", err?.message ?? err);
+    return NextResponse.json({ error: String(err?.message ?? err) }, { status: 500 });
+  }
+}
+
+export async function GET(req: Request) {
+  try {
+    const session = await auth();
+    const user = session?.user as { id?: string; email?: string } | undefined;
+    if (!user?.id && !user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const customerId = await resolveCustomerId(user?.id, user?.email);
+    if (!customerId) {
+      return NextResponse.json({ error: "No Stripe customer" }, { status: 400 });
+    }
+
+    const portal = await createPortalSession(customerId, req);
+
+    return NextResponse.redirect(portal.url!, 303);
+  } catch (err: any) {
+    console.error("[billing-portal][GET]", err?.message ?? err);
     return NextResponse.json({ error: String(err?.message ?? err) }, { status: 500 });
   }
 }
