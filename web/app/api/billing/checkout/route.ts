@@ -33,9 +33,15 @@ async function createCheckoutSession(priceId: string, req: Request) {
   const stripe = new Stripe(secret);
   const base = resolveBaseUrl(req);
 
+  const price = await stripe.prices.retrieve(priceId);
+  const lineItem: Stripe.Checkout.SessionCreateParams.LineItem = { price: priceId };
+  if (price.recurring?.usage_type !== "metered") {
+    lineItem.quantity = 1;
+  }
+
   return stripe.checkout.sessions.create({
     mode: "subscription",
-    line_items: [{ price: priceId, quantity: 1 }],
+    line_items: [lineItem],
     success_url: `${base}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${base}/billing/cancel`,
   });
